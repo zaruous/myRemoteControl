@@ -22,3 +22,4 @@ html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(-
 .login button { background: var(--accent); color: #000; border: 0; }
 .login button:disabled { opacity: .4; }
 .err { color: #ff9b9b; font-size: 14px; margin: 0; }
+.overlay { position: fixed; inset: 0; z-index: 10; background: var(--bg); overflow: auto; }

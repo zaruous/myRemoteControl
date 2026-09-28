@@ -109,7 +109,8 @@ export class ResumableSocket {
     }, delay);
   }
 
-  private kick = () => {
+  /** 즉시 재접속(백오프 초기화). 인증 만료로 멈춘 소켓을 재로그인 후 다시 살릴 때도 사용 */
+  kick = () => {
     if (this.ws || this.disposed) return; // 연결(시도) 중이면 그대로
     this.attempt = 0;
     clearTimeout(this.retryTimer);

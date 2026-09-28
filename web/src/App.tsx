@@ -50,9 +50,11 @@ export function App() {
     removeTab(id);
   };
   const onAuthExpired = useCallback(() => setAuthed(false), []);
+  // 재로그인: 탭(xterm·오프셋)을 유지한 채 멈춰 있던 소켓만 이어받게 함 → 전체 리플레이 없이 끊긴 구간만 수신
+  const onLogin = async () => { await load(); apis.current.forEach(a => a.resume()); };
 
   if (authed === null) return null;
-  if (!authed) return <Login onDone={load} />;
+  if (!authed && tabs.length === 0) return <Login onDone={onLogin} />;
 
   return (
     <div className="app">
@@ -75,6 +77,8 @@ export function App() {
         ))}
       </main>
       <Toolbar api={active ? apis.current.get(active) : undefined} ctrl={ctrl} setCtrl={setCtrl} />
+      {/* 인증 만료 시 터미널을 언마운트하지 않고 위에 덮음 */}
+      {!authed && <div className="overlay"><Login onDone={onLogin} /></div>}
     </div>
   );
 }
