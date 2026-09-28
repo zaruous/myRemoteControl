@@ -5,9 +5,11 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Request, Response, NextFunction } from 'express';
 import { authenticator } from 'otplib';
+import { LoginManager, type Login } from './logins.js';
 
 export const AUTH_FILE = process.env.WEBTERM_AUTH_FILE || path.join(os.homedir(), '.webterm', 'auth.json');
 const TOKEN_TTL_MS = Number(process.env.WEBTERM_TOKEN_TTL_MIN || 480) * 60_000; // 기본 8시간
+const IDLE_MS = Number(process.env.WEBTERM_IDLE_MIN || 15) * 60_000; // WS 연결 없이 이 시간 지나면 만료
 const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60_000;
 
@@ -30,7 +32,9 @@ function loadAuth(): AuthFile {
 }
 
 // 단일 사용자 전제. 데몬 재시작 시 토큰 전부 무효화(어차피 PTY도 전부 사라짐).
-const tokens = new Map<string, number>(); // token -> expiresAt
+// 인증 파일이 바뀌면(setup 재실행·삭제) 기존 토큰 전부 무효
+const authVersion = () => { try { return String(fs.statSync(AUTH_FILE).mtimeMs); } catch { return 'missing'; } };
+export const logins = new LoginManager({ ttlMs: TOKEN_TTL_MS, idleMs: IDLE_MS, version: authVersion });
 let fails = 0, lockedUntil = 0, lastTotpStep = -1;
 
 authenticator.options = { window: 1 }; // ±30초 시계 오차 허용
@@ -52,16 +56,14 @@ export function login(req: Request, res: Response) {
   }
   fails = 0;
   lastTotpStep = step;
-  const token = randomBytes(32).toString('base64url');
-  const exp = Date.now() + TOKEN_TTL_MS;
-  tokens.set(token, exp);
-  res.cookie('wt', token, { httpOnly: true, secure: req.secure || req.headers['x-forwarded-proto'] === 'https', sameSite: 'strict', maxAge: TOKEN_TTL_MS, path: '/' });
-  res.json({ exp });
+  const l = logins.issue(String(req.headers['user-agent'] ?? ''));
+  res.cookie('wt', l.token, { httpOnly: true, secure: req.secure || req.headers['x-forwarded-proto'] === 'https', sameSite: 'strict', maxAge: TOKEN_TTL_MS, path: '/' });
+  res.json({ exp: l.exp });
 }
 
 export function logout(req: Request, res: Response) {
-  const t = readCookie(req.headers.cookie);
-  if (t) tokens.delete(t);
+  const l = logins.check(readCookie(req.headers.cookie));
+  if (l) logins.revoke(l.id); // 이 기기의 열린 WS도 즉시 닫힘
   res.clearCookie('wt', { path: '/' });
   res.json({ ok: true });
 }
@@ -70,16 +72,14 @@ function readCookie(header?: string): string | undefined {
   return header?.split(';').map(s => s.trim()).find(s => s.startsWith('wt='))?.slice(3);
 }
 
-/** 유효하면 만료시각(ms), 아니면 null. HTTP·WS 공용 */
-export function verifyRequest(req: IncomingMessage): number | null {
-  const t = readCookie(req.headers.cookie);
-  const exp = t ? tokens.get(t) : undefined;
-  if (!t || !exp) return null;
-  if (exp < Date.now()) { tokens.delete(t); return null; }
-  return exp;
+/** 유효하면 Login, 아니면 null. HTTP·WS 공용 */
+export function verifyRequest(req: IncomingMessage): Login | null {
+  return logins.check(readCookie(req.headers.cookie));
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (verifyRequest(req) === null) return res.status(401).json({ error: 'unauthorized' });
+  const l = verifyRequest(req);
+  if (!l) return res.status(401).json({ error: 'unauthorized' });
+  res.locals.login = l;
   next();
 }

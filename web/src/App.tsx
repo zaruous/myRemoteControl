@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TerminalTab, type TabApi } from './TerminalTab';
 import { Toolbar } from './Toolbar';
+import { Manager } from './Manager';
 
 interface Tab { id: string; title: string }
 const json = { 'content-type': 'application/json' };
@@ -13,6 +14,7 @@ export function App() {
   const ctrlRef = useRef(false);
   const apis = useRef(new Map<string, TabApi>());
   const [, bump] = useState(0);
+  const [mgr, setMgr] = useState(false);
 
   const setCtrl = (v: boolean) => { ctrlRef.current = v; setCtrlState(v); };
   const register = useCallback((id: string, api: TabApi | null) => {
@@ -66,7 +68,10 @@ export function App() {
           </div>
         ))}
         <button className="new" onClick={newTab} aria-label="새 터미널">＋</button>
+        <button className="new mgr-btn" onClick={() => setMgr(m => !m)} aria-label="관리">⋯</button>
       </nav>
+      {mgr && <Manager onClose={() => setMgr(false)} onKill={closeTab}
+        onLoggedOut={() => { setMgr(false); setAuthed(false); }} />}
       <main className="terms">
         {tabs.length === 0 && <button className="empty" onClick={newTab}>새 터미널 열기</button>}
         {/* 모든 탭을 마운트 유지 → 탭 전환 시 xterm 상태·소켓이 살아 있음 */}

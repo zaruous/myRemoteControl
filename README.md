@@ -70,10 +70,19 @@ WEBTERM_ORIGINS=https://term.example.com npm --prefix ../server start
 
 개발 모드: `server`에서 `npm start`, `web`에서 `npm run dev` → http://localhost:5173 (Vite가 /api, /ws 프록시).
 
-환경변수: `PORT`(7681) `HOST`(127.0.0.1) `WEBTERM_ORIGINS` `WEBTERM_TOKEN_TTL_MIN`(480) `WEBTERM_BUFFER_CHARS`(2000000) `WEBTERM_AUTH_FILE`.
+환경변수: `PORT`(7681) `HOST`(127.0.0.1) `WEBTERM_ORIGINS` `WEBTERM_TOKEN_TTL_MIN`(480) `WEBTERM_IDLE_MIN`(15) `WEBTERM_BUFFER_CHARS`(2000000) `WEBTERM_AUTH_FILE`.
+
+## 로그인 기기 · 터미널 세션 관리
+
+탭 바의 `⋯` 버튼이 관리 패널을 연다.
+
+- **로그인 기기** (`GET /api/logins`, `DELETE /api/logins/:id`, `DELETE /api/logins`): 기기별·전체 로그아웃. 폐기된 기기의 열린 WS는 즉시 4401로 닫힌다.
+- **만료 규칙**: 절대 만료(`WEBTERM_TOKEN_TTL_MIN`) + 유휴 만료(WS 연결 없이 `WEBTERM_IDLE_MIN` 경과, 창을 닫은 경우) + 인증 파일 변경(`npm run setup` 재실행·삭제) 시 전체 무효. 열린 WS에는 30초 주기로 반영된다.
+- **터미널 세션** (`GET /api/sessions`): 셸 PID, 포그라운드 프로세스, 접속 수 표시. 종료 시 셸과 자손 프로세스(nohup 포함) 및 Linux에서는 같은 세션 ID의 프로세스(이중 fork로 PID 1에 입양된 것 포함)에 SIGTERM, 2초 후 남은 것에 SIGKILL. 시작 시각을 대조해 재사용된 PID는 건드리지 않는다.
+- **한계**: `setsid` 등으로 세션을 벗어난 프로세스는 잡지 못한다. macOS의 프로세스 트리 종료는 미검증. 탭이 하나도 없으면 WS가 없으므로 페이지를 열어 둔 채로도 유휴 만료된다.
 
 ## 4. 검증된 것 / 안 된 것
 
-`npm test`로 확인: 출력 도중 소켓 강제 절단 → 300ms 동안 PTY 계속 출력 → resume 재접속 시 3,000줄이 누락·중복 없이 연속, 버퍼 초과 시 `reset` 플래그, 잘못된 Origin 403. 수동 확인: 틀린 비밀번호 401, 정상 로그인 200, **같은 OTP 재사용 401**.
+`npm test`로 확인: 로그인 관리(TTL·유휴·기기/전체 폐기·인증 파일 변경), 로그아웃 시 열린 WS 4401 종료, 탭 종료 시 nohup·이중 fork·TERM 무시 프로세스까지 정리, 출력 도중 소켓 강제 절단 → 300ms 동안 PTY 계속 출력 → resume 재접속 시 3,000줄이 누락·중복 없이 연속, 버퍼 초과 시 `reset` 플래그, 잘못된 Origin 403. 수동 확인: 틀린 비밀번호 401, 정상 로그인 200, **같은 OTP 재사용 401**.
 
 실기기(iOS Safari/Android Chrome)에서의 툴바·가상 키보드·백그라운드 복귀 동작은 검증하지 않았다.

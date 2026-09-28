@@ -23,3 +23,13 @@ html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(-
 .login button:disabled { opacity: .4; }
 .err { color: #ff9b9b; font-size: 14px; margin: 0; }
 .overlay { position: fixed; inset: 0; z-index: 10; background: var(--bg); overflow: auto; }
+.mgr-btn { margin-left: auto; }
+.mgr { position: fixed; z-index: 10; top: 40px; right: 8px; left: 8px; max-width: 520px; margin-left: auto; max-height: 80dvh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.mgr header { display: flex; gap: 8px; align-items: center; }
+.mgr header b { flex: 1; }
+.mgr h2 { font-size: 14px; color: var(--dim); margin: 12px 0 4px; }
+.mgr ul { list-style: none; margin: 0; padding: 0; }
+.mgr li { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.mgr small { color: var(--dim); word-break: break-all; }
+.mgr button { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; cursor: pointer; flex: none; }
+.mgr .danger { margin-top: 6px; color: #ff9b9b; }

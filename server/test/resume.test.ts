@@ -6,17 +6,20 @@ import type { AddressInfo } from 'node:net';
 import WebSocket from 'ws';
 import { SessionManager } from '../src/sessions.js';
 import { attachWs } from '../src/ws.js';
+import { LoginManager } from '../src/logins.js';
 
 const ORIGIN = 'http://test';
 async function setup(bufferChars: number) {
   const sessions = new SessionManager(bufferChars);
   const server = http.createServer();
-  attachWs(server, sessions, () => Date.now() + 60_000, [ORIGIN]);
+  const logins = new LoginManager({ ttlMs: 60_000, idleMs: 60_000, version: () => 'v' });
+  const login = logins.issue('test');
+  attachWs(server, sessions, req => logins.check(req.headers.cookie?.slice(3)), logins, [ORIGIN]);
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
   const port = (server.address() as AddressInfo).port;
   const open = (id: string, resume: number) =>
-    new WebSocket(`ws://127.0.0.1:${port}/ws?session=${id}&resume=${resume}`, { headers: { origin: ORIGIN } });
-  return { sessions, server, open };
+    new WebSocket(`ws://127.0.0.1:${port}/ws?session=${id}&resume=${resume}`, { headers: { origin: ORIGIN, cookie: `wt=${login.token}` } });
+  return { sessions, server, open, logins, login };
 }
 const N = 3000;
 const script = `for i in $(seq 1 ${N}); do echo L$i; [ $((i%200)) = 0 ] && sleep 0.05; done; sleep 0.2`;
@@ -77,4 +80,28 @@ test('Origin 불일치 시 업그레이드 거부', async () => {
   assert.equal(status, 403);
   sessions.kill(s.id); server.close();
   void open;
+});
+
+test('로그아웃(토큰 폐기) 시 열린 WS가 4401로 닫힘', async () => {
+  const { sessions, server, open, logins, login } = await setup(1000);
+  const s = sessions.create({ shell: 'bash', args: ['-c', 'sleep 5'] });
+  const ws = open(s.id, 0);
+  await new Promise(r => ws.once('message', r));
+  assert.equal(sessions.list()[0].clients, 1);
+  const code = new Promise<number>(res => ws.once('close', c => res(c)));
+  logins.revoke(login.id);
+  assert.equal(await code, 4401);
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(sessions.list()[0].clients, 0);
+  assert.equal(logins.list().length, 0);
+  sessions.kill(s.id); server.close();
+});
+
+test('쿠키 없으면 업그레이드 401', async () => {
+  const { sessions, server } = await setup(1000);
+  const s = sessions.create({ shell: 'bash', args: ['-c', 'sleep 1'] });
+  const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/ws?session=${s.id}`, { headers: { origin: ORIGIN } });
+  const status = await new Promise<number>(res => ws.on('unexpected-response', (_q, r) => res(r.statusCode!)));
+  assert.equal(status, 401);
+  sessions.kill(s.id); server.close();
 });
