@@ -1,6 +1,7 @@
 import type { Server, IncomingMessage } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { SessionManager } from './sessions.js';
+import type { Login, LoginManager } from './logins.js';
 
 // 프로토콜 (JSON 텍스트 프레임)
 //  S→C  {t:'out', s:<시작 오프셋>, d:<문자열>, reset?:true}   reset=버퍼에서 밀려난 구간 있음 → 클라가 화면 리셋
@@ -15,7 +16,8 @@ export const CLOSE = { AUTH: 4401, NO_SESSION: 4404, SLOW: 4408 } as const;
 export function attachWs(
   server: Server,
   sessions: SessionManager,
-  verify: (req: IncomingMessage) => number | null,
+  verify: (req: IncomingMessage) => Login | null,
+  logins: Pick<LoginManager, 'attach' | 'detach'>,
   allowedOrigins: string[],
 ) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
@@ -26,14 +28,17 @@ export function attachWs(
     if (url.pathname !== '/ws') return reject(404, 'Not Found');
     // 쿠키 인증 WS는 CSWSH에 취약 → Origin 화이트리스트 필수
     if (!allowedOrigins.includes(req.headers.origin ?? '')) return reject(403, 'Forbidden');
-    const exp = verify(req);
-    if (exp === null) return reject(401, 'Unauthorized');
-    wss.handleUpgrade(req, socket, head, ws => onConnection(ws, url, exp));
+    const login = verify(req);
+    if (!login) return reject(401, 'Unauthorized');
+    wss.handleUpgrade(req, socket, head, ws => onConnection(ws, url, login));
   });
 
-  function onConnection(ws: WebSocket, url: URL, exp: number) {
+  function onConnection(ws: WebSocket, url: URL, login: Login) {
     const s = sessions.get(url.searchParams.get('session') ?? '');
     if (!s) return ws.close(CLOSE.NO_SESSION, 'no such session');
+    // 로그아웃·만료·유휴 판단은 LoginManager가 소유. 폐기되면 이 소켓을 4401로 닫음
+    logins.attach(login, ws);
+    s.clients++;
     const send = (m: object) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(m));
 
     const cols = Number(url.searchParams.get('cols')), rows = Number(url.searchParams.get('rows'));
@@ -61,8 +66,6 @@ export function attachWs(
       alive = false;
       ws.ping();
     }, HEARTBEAT_MS);
-    // 토큰 만료 시 기존 연결도 끊음(엄격 모드). 재접속은 재로그인 필요
-    const expTimer = setTimeout(() => ws.close(CLOSE.AUTH, 'token expired'), Math.max(0, exp - Date.now()));
 
     ws.on('message', raw => {
       let m: any;
@@ -76,7 +79,8 @@ export function attachWs(
 
     ws.on('close', () => {
       clearInterval(hb);
-      clearTimeout(expTimer);
+      logins.detach(login, ws);
+      s.clients--;
       s.events.off('data', onData);
       s.events.off('exit', onExit);
       s.events.off('closed', onClosed);

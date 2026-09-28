@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TerminalTab, type TabApi } from './TerminalTab';
 import { Toolbar } from './Toolbar';
+import { Manager } from './Manager';
 
 interface Tab { id: string; title: string }
 const json = { 'content-type': 'application/json' };
@@ -13,6 +14,7 @@ export function App() {
   const ctrlRef = useRef(false);
   const apis = useRef(new Map<string, TabApi>());
   const [, bump] = useState(0);
+  const [mgr, setMgr] = useState(false);
 
   const setCtrl = (v: boolean) => { ctrlRef.current = v; setCtrlState(v); };
   const register = useCallback((id: string, api: TabApi | null) => {
@@ -50,9 +52,11 @@ export function App() {
     removeTab(id);
   };
   const onAuthExpired = useCallback(() => setAuthed(false), []);
+  // 재로그인: 탭(xterm·오프셋)을 유지한 채 멈춰 있던 소켓만 이어받게 함 → 전체 리플레이 없이 끊긴 구간만 수신
+  const onLogin = async () => { await load(); apis.current.forEach(a => a.resume()); };
 
   if (authed === null) return null;
-  if (!authed) return <Login onDone={load} />;
+  if (!authed && tabs.length === 0) return <Login onDone={onLogin} />;
 
   return (
     <div className="app">
@@ -64,7 +68,11 @@ export function App() {
           </div>
         ))}
         <button className="new" onClick={newTab} aria-label="새 터미널">＋</button>
+        <button className="new mgr-btn" onClick={() => setMgr(m => !m)} aria-label="관리">⋯</button>
       </nav>
+      {mgr && <Manager onClose={() => setMgr(false)} onKill={closeTab}
+        onLoggedOut={() => { setMgr(false); setTabs([]); setAuthed(false); }} />}
+      {/* 명시적 로그아웃은 만료와 달리 터미널을 언마운트 → 이전 출력이 DOM에 남지 않음 */}
       <main className="terms">
         {tabs.length === 0 && <button className="empty" onClick={newTab}>새 터미널 열기</button>}
         {/* 모든 탭을 마운트 유지 → 탭 전환 시 xterm 상태·소켓이 살아 있음 */}
@@ -75,6 +83,8 @@ export function App() {
         ))}
       </main>
       <Toolbar api={active ? apis.current.get(active) : undefined} ctrl={ctrl} setCtrl={setCtrl} />
+      {/* 인증 만료 시 터미널을 언마운트하지 않고 위에 덮음 */}
+      {!authed && <div className="overlay"><Login onDone={onLogin} /></div>}
     </div>
   );
 }

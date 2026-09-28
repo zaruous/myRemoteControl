@@ -9,6 +9,7 @@ export interface TabApi {
   sendRaw(d: string): void;
   arrow(dir: 'A' | 'B' | 'C' | 'D'): void;
   focus(): void;
+  resume(): void;
 }
 
 interface Props {
@@ -66,6 +67,7 @@ export function TerminalTab({ id, active, ctrlArmed, onCtrlUsed, register, onAut
       // htop/vim 등은 application cursor 모드(DECCKM)에서 ESC O A 형식을 기대
       arrow: dir => sendRaw((term.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b[') + dir),
       focus: () => term.focus(),
+      resume: () => sock.kick(),
     });
 
     return () => { register(id, null); ro.disconnect(); sock.dispose(); term.dispose(); };
