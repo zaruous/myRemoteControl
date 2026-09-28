@@ -71,7 +71,8 @@ export function App() {
         <button className="new mgr-btn" onClick={() => setMgr(m => !m)} aria-label="관리">⋯</button>
       </nav>
       {mgr && <Manager onClose={() => setMgr(false)} onKill={closeTab}
-        onLoggedOut={() => { setMgr(false); setAuthed(false); }} />}
+        onLoggedOut={() => { setMgr(false); setTabs([]); setAuthed(false); }} />}
+      {/* 명시적 로그아웃은 만료와 달리 터미널을 언마운트 → 이전 출력이 DOM에 남지 않음 */}
       <main className="terms">
         {tabs.length === 0 && <button className="empty" onClick={newTab}>새 터미널 열기</button>}
         {/* 모든 탭을 마운트 유지 → 탭 전환 시 xterm 상태·소켓이 살아 있음 */}
