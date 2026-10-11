@@ -24,8 +24,16 @@ export function attachWs(
     const url = new URL(req.url ?? '/', 'http://x');
     const reject = (code: number, msg: string) => { socket.end(`HTTP/1.1 ${code} ${msg}\r\n\r\n`); };
     if (url.pathname !== '/ws') return reject(404, 'Not Found');
-    // 쿠키 인증 WS는 CSWSH에 취약 → Origin 화이트리스트 필수
-    if (!allowedOrigins.includes(req.headers.origin ?? '')) return reject(403, 'Forbidden');
+    // 쿠키 인증 WS는 CSWSH에 취약 → Origin 화이트리스트 검사 (와일드카드 * 또는 동일 Host 허용)
+    const origin = req.headers.origin ?? '';
+    let isSameHost = false;
+    try {
+      if (origin && req.headers.host) {
+        isSameHost = new URL(origin).host === req.headers.host;
+      }
+    } catch { /* ignore */ }
+    const isAllowed = allowedOrigins.includes('*') || isSameHost || allowedOrigins.includes(origin);
+    if (!isAllowed) return reject(403, 'Forbidden');
     const exp = verify(req);
     if (exp === null) return reject(401, 'Unauthorized');
     wss.handleUpgrade(req, socket, head, ws => onConnection(ws, url, exp));
